@@ -134,7 +134,7 @@ Your task is to analyze the user's request, fetch the necessary data, select the
     @classmethod
     def build_agent(cls) -> LlmAgent:
         """Builds the LLM agent for the rizzchartsAgent agent."""
-        LITELLM_MODEL = os.getenv("LITELLM_MODEL", "gemini-2.5-flash")
+        LITELLM_MODEL = os.getenv("LITELLM_MODEL", "gemini/gemini-2.5-flash")
 
         return LlmAgent(
             model=LiteLlm(model=LITELLM_MODEL),
