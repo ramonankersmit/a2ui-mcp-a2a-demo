@@ -1,13 +1,13 @@
-# Baseline A2UI demo run instructions (Windows Git CMD)
+# A2UI demo run instructions (Windows Git CMD)
 
-> This is the **baseline** setup only (no MCP/A2A integrations beyond what already exists).
+These instructions cover the baseline A2UI demo plus the deterministic MCP + A2A demo mode.
 
 ## Prerequisites
 - Git
 - Node.js + npm
 - Python 3.9+
 - [UV](https://docs.astral.sh/uv/) (for `uv run` in the agents)
-- A Gemini API key (or Vertex AI configured via env vars)
+- A Gemini API key (or Vertex AI configured via env vars) for the normal LLM flow
 
 ## 1) Install client dependencies
 ```bash
@@ -15,7 +15,7 @@ cd samples/client/lit
 npm install
 ```
 
-## 2) Configure agent environment variables
+## 2) Configure agent environment variables (LLM flow)
 For each agent, create `.env` from the template and set your API key:
 
 ```bash
@@ -31,6 +31,8 @@ cp .env.example .env
 Optional env vars:
 - `GOOGLE_GENAI_USE_VERTEXAI=TRUE` (skip GEMINI_API_KEY check)
 - `LITELLM_MODEL=gemini/gemini-2.5-flash` (or another LiteLLM model)
+- `MCP_SSE_URL` (default: `http://127.0.0.1:8000/sse`)
+- `A2A_RATER_URL` (default: `http://localhost:8002/`)
 
 ## 3) Run the baseline demo (all services)
 From `samples/client/lit`:
@@ -47,7 +49,9 @@ This command runs:
 ## 4) Open the UI
 - http://localhost:5173/
 
-## 5) Optional: local MCP restaurants tool server
+Use the **"Demo MCP+A2A"** button in the Restaurant Finder screen to trigger the deterministic demo pipeline.
+
+## 5) MCP restaurants tool server (required for demo mode)
 This repository includes a local MCP tool server for deterministic restaurant data.
 
 ```bash
@@ -56,13 +60,13 @@ py -m demos.mcp_restaurants_server.server
 ```
 
 Default endpoint:
-- http://localhost:7001/sse
+- http://localhost:7001/sse (set `MCP_SSE_URL=http://localhost:7001/sse` to use the local server)
 
 Optional env vars:
 - `MCP_HOST` (default: `localhost`)
 - `MCP_PORT` (default: `7001`)
 
-## 6) Optional: A2A restaurant rater (deterministic)
+## 6) A2A restaurant rater (required for demo mode)
 Deterministic A2A agent (no LLMs or external calls) that enriches restaurant lists with scores.
 
 ```bash
@@ -78,10 +82,11 @@ Default endpoint:
 Optional env vars:
 - `A2A_RATER_HOST` (default: `localhost`)
 - `A2A_RATER_PORT` (default: `8002`)
+- `A2A_RATER_URL` (default: `http://localhost:8002/`)
 
 ## Ports / endpoints
 - Restaurant agent: http://localhost:10002
 - Contact lookup agent: http://localhost:10003
 - Agent cards: `/.well-known/agent-card.json` on each agent base URL
-- MCP restaurant tools (SSE): http://localhost:7001/sse
+- MCP restaurant tools (SSE): http://localhost:7001/sse (local demo) or `MCP_SSE_URL` (default `http://127.0.0.1:8000/sse`)
 - A2A restaurant rater: http://localhost:8002

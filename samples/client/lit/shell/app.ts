@@ -156,6 +156,18 @@ export class A2UILayoutEditor extends SignalWatcher(LitElement) {
         }
       }
 
+      .demo-actions {
+        width: 100%;
+        justify-content: flex-end;
+      }
+
+      .demo-button {
+        background: transparent;
+        border: 1px solid var(--p-40);
+        color: light-dark(var(--p-40), var(--p-20));
+        font-weight: 600;
+      }
+
       .rotate {
         animation: rotate 1s linear infinite;
       }
@@ -377,6 +389,18 @@ export class A2UILayoutEditor extends SignalWatcher(LitElement) {
           <span class="g-icon filled-heavy">send</span>
         </button>
       </div>
+      ${this.config.key === "restaurant"
+        ? html`<div class="demo-actions">
+            <button
+              class="demo-button"
+              type="button"
+              ?disabled=${this.#requesting}
+              @click=${() => this.#startDemo()}
+            >
+              Demo MCP+A2A
+            </button>
+          </div>`
+        : nothing}
     </form>`;
   }
 
@@ -399,6 +423,20 @@ export class A2UILayoutEditor extends SignalWatcher(LitElement) {
       clearInterval(this.#loadingInterval);
       this.#loadingInterval = undefined;
     }
+  }
+
+  async #startDemo() {
+    const message: v0_8.Types.A2UIClientEventMessage = {
+      userAction: {
+        name: "demo_mcp_a2a",
+        surfaceId: "demo",
+        sourceComponentId: "demo-mcp-a2a",
+        timestamp: new Date().toISOString(),
+        context: {},
+      },
+    };
+
+    await this.#sendAndProcessMessage(message);
   }
 
   async #sendMessage(

@@ -1,4 +1,4 @@
-# RUN_NOTES (baseline A2UI demo)
+# RUN_NOTES (A2UI demo + deterministic MCP/A2A mode)
 
 ## 1) Prerequisites check (Windows Git CMD)
 
@@ -65,6 +65,9 @@ Expected URLs / ports:
 - Contact lookup agent backend: **http://localhost:10003**
 - Agent cards: `/.well-known/agent-card.json` on each agent base URL
 
+Deterministic demo trigger:
+- Use the **"Demo MCP+A2A"** button in the Restaurant Finder UI to start the deterministic MCP + A2A pipeline.
+
 Streaming / task updates:
 - The A2A servers are configured with `streaming=True`. Task updates are emitted via the A2A task stream (used by the SDK client). The restaurant agent executor sends interim updates and a final A2UI payload when the task completes.
 
@@ -72,6 +75,8 @@ Environment variables / keys:
 - **GEMINI_API_KEY** is required unless `GOOGLE_GENAI_USE_VERTEXAI=TRUE` is set.
 - Optional: **GOOGLE_GENAI_USE_VERTEXAI=TRUE**
 - Optional model override: **LITELLM_MODEL** (defaults to `gemini/gemini-2.5-flash`).
+- MCP SSE URL override: **MCP_SSE_URL** (defaults to `http://127.0.0.1:8000/sse`).
+- A2A rater URL override: **A2A_RATER_URL** (defaults to `http://localhost:8002/`).
 
 Where this is indicated:
 - `samples/agent/adk/restaurant_finder/.env.example`
@@ -111,8 +116,8 @@ Target path: `samples/agent/adk/restaurant_finder/`
 
 ### C) Where user actions/events enter (button click / form submit)
 1. **`agent_executor.py`**
-   - In `execute(...)`, detects `DataPart` payloads with `userAction` and dispatches by `actionName`.
-   - Handles `book_restaurant` and `submit_booking` actions, converting them into LLM queries.
+   - In `execute(...)`, detects `DataPart` payloads with `userAction` and dispatches by `name`/`actionName`.
+   - Handles `book_restaurant`, `submit_booking`, and the deterministic `demo_mcp_a2a` action.
 
 2. **`a2ui_examples.py`**
    - Defines the action names and context payloads for the UI buttons (`book_restaurant`, `submit_booking`).
@@ -130,7 +135,7 @@ Target path: `samples/agent/adk/restaurant_finder/`
 ## 4) Baseline README (created)
 - `README_DEMO.md` at repo root contains **baseline** demo run instructions for Windows Git CMD.
 
-## 5) Local MCP restaurant tool server (optional)
+## 5) Local MCP restaurant tool server (required for deterministic demo)
 
 Location:
 ```
@@ -146,13 +151,14 @@ py -m demos.mcp_restaurants_server.server
 Status: **Not executed in this environment.** The commands above are the intended local MCP run steps, but I did not run them here.
 
 Expected URL / transport:
-- MCP SSE endpoint: **http://localhost:7001/sse**
+- MCP SSE endpoint: **http://localhost:7001/sse** (set `MCP_SSE_URL=http://localhost:7001/sse` to use the local server)
 
 Environment variables:
 - **MCP_HOST** (default: `localhost`)
 - **MCP_PORT** (default: `7001`)
+- **MCP_SSE_URL** (default: `http://127.0.0.1:8000/sse`)
 
-## 6) A2A restaurant rater (optional)
+## 6) A2A restaurant rater (required for deterministic demo)
 
 Location:
 ```
@@ -176,6 +182,7 @@ Expected URLs / endpoints:
 Environment variables:
 - **A2A_RATER_HOST** (default: `localhost`)
 - **A2A_RATER_PORT** (default: `8002`)
+- **A2A_RATER_URL** (default: `http://localhost:8002/`)
 
 ## 7) .gitignore check
 - Added `build/` and `*.env` entries to ensure build artifacts and environment files are ignored.
