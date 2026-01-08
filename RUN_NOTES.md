@@ -130,5 +130,27 @@ Target path: `samples/agent/adk/restaurant_finder/`
 ## 4) Baseline README (created)
 - `README_DEMO.md` at repo root contains **baseline** demo run instructions for Windows Git CMD.
 
-## 5) .gitignore check
+## 5) Local MCP restaurant tool server (optional)
+
+Location:
+```
+cd demos/mcp_restaurants_server
+```
+
+Commands to run (Windows Git CMD):
+```bash
+py -m pip install -r demos/mcp_restaurants_server/requirements.txt
+py -m demos.mcp_restaurants_server.server
+```
+
+Status: **Not executed in this environment.** The commands above are the intended local MCP run steps, but I did not run them here.
+
+Expected URL / transport:
+- MCP SSE endpoint: **http://localhost:7001/sse**
+
+Environment variables:
+- **MCP_HOST** (default: `localhost`)
+- **MCP_PORT** (default: `7001`)
+
+## 6) .gitignore check
 - Added `build/` and `*.env` entries to ensure build artifacts and environment files are ignored.

@@ -47,7 +47,23 @@ This command runs:
 ## 4) Open the UI
 - http://localhost:5173/
 
+## 5) Optional: local MCP restaurants tool server
+This repository includes a local MCP tool server for deterministic restaurant data.
+
+```bash
+py -m pip install -r demos/mcp_restaurants_server/requirements.txt
+py -m demos.mcp_restaurants_server.server
+```
+
+Default endpoint:
+- http://localhost:7001/sse
+
+Optional env vars:
+- `MCP_HOST` (default: `localhost`)
+- `MCP_PORT` (default: `7001`)
+
 ## Ports / endpoints
 - Restaurant agent: http://localhost:10002
 - Contact lookup agent: http://localhost:10003
 - Agent cards: `/.well-known/agent-card.json` on each agent base URL
+- MCP restaurant tools (SSE): http://localhost:7001/sse
