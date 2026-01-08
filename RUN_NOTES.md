@@ -161,6 +161,7 @@ cd demos/a2a_restaurant_rater
 
 Commands to run (Windows Git CMD):
 ```bash
+cd /path/to/a2ui-mcp-a2a-demo
 py -m pip install -r demos/a2a_restaurant_rater/requirements.txt
 py -m demos.a2a_restaurant_rater.server
 py demos/a2a_restaurant_rater/test_client.py

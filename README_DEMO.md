@@ -66,6 +66,7 @@ Optional env vars:
 Deterministic A2A agent (no LLMs or external calls) that enriches restaurant lists with scores.
 
 ```bash
+cd /path/to/a2ui-mcp-a2a-demo
 py -m pip install -r demos/a2a_restaurant_rater/requirements.txt
 py -m demos.a2a_restaurant_rater.server
 ```

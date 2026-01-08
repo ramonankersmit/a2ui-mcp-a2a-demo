@@ -12,7 +12,10 @@ py -m pip install -r demos/a2a_restaurant_rater/requirements.txt
 
 ## Run the server
 
+Run from the repository root so the `demos` package is importable:
+
 ```bash
+cd /path/to/a2ui-mcp-a2a-demo
 py -m demos.a2a_restaurant_rater.server
 ```
 
