@@ -10,13 +10,16 @@ def _post_json(url: str, payload: Dict[str, Any]) -> Dict[str, Any]:
     data = json.dumps(payload).encode("utf-8")
     request = Request(url, data=data, headers={"Content-Type": "application/json"})
     with urlopen(request) as response:
-        return json.loads(response.read().decode("utf-8"))
+        body = response.read().decode("utf-8")
+        if response.status != 200:
+            raise SystemExit(f"HTTP error {response.status}: {body}")
+        return json.loads(body)
 
 
 def main() -> None:
     port = int(os.getenv("A2A_RATER_PORT", "8002"))
     base_url = f"http://localhost:{port}"
-    endpoint = f"{base_url}/jsonrpc"
+    endpoint = f"{base_url}/"
 
     payload = {
         "restaurants": [

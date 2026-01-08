@@ -32,4 +32,4 @@ Agent card endpoint:
 py demos/a2a_restaurant_rater/test_client.py
 ```
 
-The client posts a JSON-RPC `sendMessage` request with a `rate_restaurants` payload and prints the response.
+The client posts a JSON-RPC `sendMessage` request to `http://localhost:8002/` with a `rate_restaurants` payload and prints the response.
