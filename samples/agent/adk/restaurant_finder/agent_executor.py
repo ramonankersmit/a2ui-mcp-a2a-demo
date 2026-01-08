@@ -12,8 +12,17 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import datetime
 import json
 import logging
+import os
+import time
+import uuid
+from typing import Any
+
+import httpx
+from mcp.client.session import ClientSession
+from mcp.client.sse import sse_client
 
 from a2a.server.agent_execution import AgentExecutor, RequestContext
 from a2a.server.events import EventQueue
@@ -37,6 +46,208 @@ from agent import RestaurantAgent
 
 logger = logging.getLogger(__name__)
 
+DEMO_SURFACE_ID = "default"
+DEMO_MCP_STEP = "mcp_search"
+DEMO_AVAILABILITY_STEP = "mcp_availability"
+DEMO_A2A_STEP = "a2a_rank"
+DEMO_DONE_STEP = "done"
+
+
+def _extract_tool_payload(result: Any) -> Any:
+    if getattr(result, "structuredContent", None) is not None:
+        return result.structuredContent
+
+    content = getattr(result, "content", []) or []
+    for item in content:
+        text = getattr(item, "text", None)
+        if not text:
+            continue
+        try:
+            return json.loads(text)
+        except json.JSONDecodeError:
+            continue
+    return None
+
+
+def _availability_value_map(slots: list[str]) -> list[dict[str, Any]]:
+    return [
+        {"key": str(index + 1), "valueString": slot} for index, slot in enumerate(slots)
+    ]
+
+
+def _restaurant_value_map(restaurant: dict[str, Any]) -> list[dict[str, Any]]:
+    availability = restaurant.get("availability") or []
+    availability_text = ", ".join(availability) if availability else "No availability yet"
+    rating = float(restaurant.get("rating") or 0)
+    distance_km = float(restaurant.get("distance_km") or 0)
+    price_level = int(restaurant.get("price_level") or 0)
+    score = restaurant.get("score")
+    score_value = float(score) if score is not None else 0
+    score_text = f"Score: {int(score_value)}" if score is not None else "Score: --"
+    recommended = bool(restaurant.get("recommended"))
+    recommended_text = "Recommended" if recommended else "Not recommended"
+    meta = (
+        f"{restaurant.get('cuisine', 'Unknown')} · "
+        f"Rating {rating:.1f} · {distance_km:.1f} km · "
+        f"Price level {price_level}"
+    )
+
+    return [
+        {"key": "id", "valueString": str(restaurant.get("id", ""))},
+        {"key": "name", "valueString": str(restaurant.get("name", ""))},
+        {"key": "cuisine", "valueString": str(restaurant.get("cuisine", ""))},
+        {"key": "rating", "valueNumber": rating},
+        {"key": "distance_km", "valueNumber": distance_km},
+        {"key": "price_level", "valueNumber": price_level},
+        {"key": "availability", "valueMap": _availability_value_map(availability)},
+        {"key": "availabilityText", "valueString": availability_text},
+        {"key": "score", "valueNumber": score_value},
+        {"key": "scoreText", "valueString": score_text},
+        {"key": "recommended", "valueBoolean": recommended},
+        {"key": "recommendedText", "valueString": recommended_text},
+        {"key": "rationale", "valueString": str(restaurant.get("rationale", ""))},
+        {"key": "meta", "valueString": meta},
+    ]
+
+
+def _results_value_map(restaurants: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    return [
+        {"key": f"item{index + 1}", "valueMap": _restaurant_value_map(restaurant)}
+        for index, restaurant in enumerate(restaurants)
+    ]
+
+
+def _status_value_map(loading: bool, message: str, step: str) -> list[dict[str, Any]]:
+    return [
+        {"key": "loading", "valueBoolean": loading},
+        {"key": "message", "valueString": message},
+        {"key": "step", "valueString": step},
+    ]
+
+
+def _build_data_model_update(path: str, contents: list[dict[str, Any]]) -> dict[str, Any]:
+    return {
+        "dataModelUpdate": {
+            "surfaceId": DEMO_SURFACE_ID,
+            "path": path,
+            "contents": contents,
+        }
+    }
+
+
+def _build_demo_surface_messages() -> list[dict[str, Any]]:
+    return [
+        {
+            "beginRendering": {
+                "surfaceId": DEMO_SURFACE_ID,
+                "root": "demo-root",
+                "styles": {"primaryColor": "#3B82F6", "font": "Roboto"},
+            }
+        },
+        {
+            "surfaceUpdate": {
+                "surfaceId": DEMO_SURFACE_ID,
+                "components": [
+                    {
+                        "id": "demo-root",
+                        "component": {
+                            "Column": {
+                                "children": {
+                                    "explicitList": [
+                                        "demo-title",
+                                        "demo-status",
+                                        "demo-step",
+                                        "demo-list",
+                                    ]
+                                }
+                            }
+                        },
+                    },
+                    {
+                        "id": "demo-title",
+                        "component": {
+                            "Text": {
+                                "usageHint": "h1",
+                                "text": {
+                                    "literalString": "Restaurant Demo (MCP + A2A)"
+                                },
+                            }
+                        },
+                    },
+                    {
+                        "id": "demo-status",
+                        "component": {
+                            "Text": {"usageHint": "h3", "text": {"path": "/status/message"}}
+                        },
+                    },
+                    {
+                        "id": "demo-step",
+                        "component": {"Text": {"text": {"path": "/status/step"}}},
+                    },
+                    {
+                        "id": "demo-list",
+                        "component": {
+                            "List": {
+                                "direction": "vertical",
+                                "children": {
+                                    "template": {
+                                        "componentId": "demo-card-template",
+                                        "dataBinding": "/results",
+                                    }
+                                },
+                            }
+                        },
+                    },
+                    {
+                        "id": "demo-card-template",
+                        "component": {"Card": {"child": "demo-card-column"}},
+                    },
+                    {
+                        "id": "demo-card-column",
+                        "component": {
+                            "Column": {
+                                "children": {
+                                    "explicitList": [
+                                        "demo-name",
+                                        "demo-meta",
+                                        "demo-availability",
+                                        "demo-score",
+                                        "demo-recommended",
+                                        "demo-rationale",
+                                    ]
+                                }
+                            }
+                        },
+                    },
+                    {
+                        "id": "demo-name",
+                        "component": {"Text": {"usageHint": "h3", "text": {"path": "name"}}},
+                    },
+                    {
+                        "id": "demo-meta",
+                        "component": {"Text": {"text": {"path": "meta"}}},
+                    },
+                    {
+                        "id": "demo-availability",
+                        "component": {"Text": {"text": {"path": "availabilityText"}}},
+                    },
+                    {
+                        "id": "demo-score",
+                        "component": {"Text": {"text": {"path": "scoreText"}}},
+                    },
+                    {
+                        "id": "demo-recommended",
+                        "component": {"Text": {"text": {"path": "recommendedText"}}},
+                    },
+                    {
+                        "id": "demo-rationale",
+                        "component": {"Text": {"text": {"path": "rationale"}}},
+                    },
+                ],
+            }
+        },
+    ]
+
 
 class RestaurantAgentExecutor(AgentExecutor):
     """Restaurant AgentExecutor Example."""
@@ -46,6 +257,227 @@ class RestaurantAgentExecutor(AgentExecutor):
         # The appropriate one will be chosen at execution time.
         self.ui_agent = RestaurantAgent(base_url=base_url, use_ui=True)
         self.text_agent = RestaurantAgent(base_url=base_url, use_ui=False)
+        self._mcp_sse_url = os.getenv("MCP_SSE_URL", "http://127.0.0.1:8000/sse")
+        self._a2a_rater_url = os.getenv("A2A_RATER_URL", "http://localhost:8002/")
+
+    async def _send_demo_update(
+        self,
+        updater: TaskUpdater,
+        task: Task,
+        messages: list[dict[str, Any]],
+        state: TaskState = TaskState.working,
+        final: bool = False,
+    ) -> None:
+        parts = [create_a2ui_part(message) for message in messages]
+        await updater.update_status(
+            state,
+            new_agent_parts_message(parts, task.context_id, task.id),
+            final=final,
+        )
+
+    async def _run_demo_pipeline(
+        self, updater: TaskUpdater, task: Task
+    ) -> None:
+        start_messages = _build_demo_surface_messages()
+        start_messages.append(
+            _build_data_model_update(
+                "/",
+                [
+                    {
+                        "key": "status",
+                        "valueMap": _status_value_map(
+                            True, "Searching via MCP...", DEMO_MCP_STEP
+                        ),
+                    },
+                    {"key": "results", "valueMap": []},
+                ],
+            )
+        )
+        await self._send_demo_update(updater, task, start_messages)
+
+        restaurants: list[dict[str, Any]] = []
+        try:
+            search_start = time.perf_counter()
+            logger.info("DEMO: MCP search")
+            async with sse_client(self._mcp_sse_url) as (read_stream, write_stream):
+                async with ClientSession(read_stream, write_stream) as session:
+                    await session.initialize()
+                    search_result = await session.call_tool(
+                        "search_restaurants", {"query": "*", "location": "demo"}
+                    )
+                    restaurants_payload = _extract_tool_payload(search_result)
+                    restaurants = (
+                        restaurants_payload
+                        if isinstance(restaurants_payload, list)
+                        else []
+                    )
+
+                    search_duration = time.perf_counter() - search_start
+                    logger.info(
+                        "DEMO: MCP search completed in %.2fs", search_duration
+                    )
+
+                    partial = restaurants[:3]
+                    await self._send_demo_update(
+                        updater,
+                        task,
+                        [
+                            _build_data_model_update(
+                                "/status",
+                                _status_value_map(
+                                    True,
+                                    "Found 3, fetching more...",
+                                    DEMO_MCP_STEP,
+                                ),
+                            ),
+                            _build_data_model_update(
+                                "/results", _results_value_map(partial)
+                            ),
+                        ],
+                    )
+
+                    availability_start = time.perf_counter()
+                    logger.info("DEMO: MCP availability")
+
+                    await self._send_demo_update(
+                        updater,
+                        task,
+                        [
+                            _build_data_model_update(
+                                "/status",
+                                _status_value_map(
+                                    True, "Checking availability...", DEMO_AVAILABILITY_STEP
+                                ),
+                            ),
+                            _build_data_model_update(
+                                "/results", _results_value_map(restaurants)
+                            ),
+                        ],
+                    )
+
+                    date = datetime.date.today().isoformat()
+                    for restaurant in restaurants[:3]:
+                        availability_result = await session.call_tool(
+                            "get_availability",
+                            {"restaurant_id": restaurant.get("id"), "date": date},
+                        )
+                        availability_payload = _extract_tool_payload(
+                            availability_result
+                        )
+                        if isinstance(availability_payload, list):
+                            restaurant["availability"] = availability_payload
+
+                        await self._send_demo_update(
+                            updater,
+                            task,
+                            [_build_data_model_update("/results", _results_value_map(restaurants))],
+                        )
+
+                    availability_duration = time.perf_counter() - availability_start
+                    logger.info(
+                        "DEMO: MCP availability completed in %.2fs",
+                        availability_duration,
+                    )
+
+            logger.info("DEMO: A2A rank")
+            rank_start = time.perf_counter()
+            await self._send_demo_update(
+                updater,
+                task,
+                [
+                    _build_data_model_update(
+                        "/status",
+                        _status_value_map(True, "Ranking with A2A...", DEMO_A2A_STEP),
+                    )
+                ],
+            )
+
+            prefs = {"cuisine": "French", "max_price_level": 3}
+            request_payload = {
+                "jsonrpc": "2.0",
+                "id": str(uuid.uuid4()),
+                "method": "message/send",
+                "params": {
+                    "message": {
+                        "role": "user",
+                        "parts": [
+                            {
+                                "kind": "data",
+                                "data": {
+                                    "restaurants": restaurants,
+                                    "prefs": prefs,
+                                },
+                            }
+                        ],
+                    }
+                },
+            }
+
+            async with httpx.AsyncClient(timeout=10) as client:
+                response = await client.post(
+                    self._a2a_rater_url, json=request_payload
+                )
+                response.raise_for_status()
+                response_payload = response.json()
+
+            ranked_restaurants = (
+                response_payload.get("result", {})
+                .get("status", {})
+                .get("message", {})
+                .get("parts", [{}])[0]
+                .get("data", {})
+                .get("restaurants", [])
+            )
+
+            if isinstance(ranked_restaurants, list):
+                ranked_by_id = {item.get("id"): item for item in ranked_restaurants}
+                for restaurant in restaurants:
+                    ranked = ranked_by_id.get(restaurant.get("id"))
+                    if ranked:
+                        restaurant.update(
+                            {
+                                "score": ranked.get("score"),
+                                "rationale": ranked.get("rationale"),
+                                "recommended": ranked.get("recommended"),
+                            }
+                        )
+
+            restaurants.sort(
+                key=lambda item: float(item.get("score") or 0), reverse=True
+            )
+
+            rank_duration = time.perf_counter() - rank_start
+            logger.info("DEMO: A2A rank completed in %.2fs", rank_duration)
+
+            await self._send_demo_update(
+                updater,
+                task,
+                [
+                    _build_data_model_update(
+                        "/status",
+                        _status_value_map(False, "Ranked results", DEMO_DONE_STEP),
+                    ),
+                    _build_data_model_update("/results", _results_value_map(restaurants)),
+                ],
+                state=TaskState.input_required,
+            )
+        except Exception as exc:
+            logger.exception("DEMO: pipeline failed", exc_info=exc)
+            await self._send_demo_update(
+                updater,
+                task,
+                [
+                    _build_data_model_update(
+                        "/status",
+                        _status_value_map(
+                            False,
+                            "Demo failed. Check server logs for details.",
+                            DEMO_DONE_STEP,
+                        ),
+                    )
+                ],
+                state=TaskState.input_required,
+            )
 
     async def execute(
         self,
@@ -91,10 +523,13 @@ class RestaurantAgentExecutor(AgentExecutor):
 
         if ui_event_part:
             logger.info(f"Received a2ui ClientEvent: {ui_event_part}")
-            action = ui_event_part.get("actionName")
+            action = ui_event_part.get("name") or ui_event_part.get("actionName")
             ctx = ui_event_part.get("context", {})
 
-            if action == "book_restaurant":
+            if action == "demo_mcp_a2a":
+                logger.info("--- AGENT_EXECUTOR: Starting demo MCP + A2A flow. ---")
+
+            elif action == "book_restaurant":
                 restaurant_name = ctx.get("restaurantName", "Unknown Restaurant")
                 address = ctx.get("address", "Address not provided")
                 image_url = ctx.get("imageUrl", "")
@@ -122,6 +557,10 @@ class RestaurantAgentExecutor(AgentExecutor):
             task = new_task(context.message)
             await event_queue.enqueue_event(task)
         updater = TaskUpdater(event_queue, task.id, task.context_id)
+
+        if action == "demo_mcp_a2a" and use_ui:
+            await self._run_demo_pipeline(updater, task)
+            return
 
         async for item in agent.stream(query, task.context_id):
             is_task_complete = item["is_task_complete"]
