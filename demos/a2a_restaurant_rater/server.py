@@ -1,27 +1,14 @@
 import json
 import logging
 import os
+import uuid
 from typing import Any, Dict, List, Optional
 
-from a2a.server.agent_execution import AgentExecutor, RequestContext
-from a2a.server.apps import A2AStarletteApplication
-from a2a.server.events import EventQueue
-from a2a.server.request_handlers import DefaultRequestHandler
-from a2a.server.tasks import InMemoryTaskStore, TaskUpdater
-from a2a.types import (
-    AgentCapabilities,
-    AgentCard,
-    AgentSkill,
-    DataPart,
-    Part,
-    Task,
-    TaskState,
-    TextPart,
-    UnsupportedOperationError,
-)
-from a2a.utils import new_agent_parts_message, new_task
-from a2a.utils.errors import ServerError
+from starlette.applications import Starlette
 from starlette.middleware.cors import CORSMiddleware
+from starlette.requests import Request
+from starlette.responses import JSONResponse, PlainTextResponse
+from starlette.routing import Route
 import uvicorn
 
 logger = logging.getLogger("a2a_restaurant_rater")
@@ -106,104 +93,132 @@ def _rate_restaurant(restaurant: Dict[str, Any], prefs: Dict[str, Any]) -> Dict[
     return enriched
 
 
-def _extract_payload(context: RequestContext) -> Optional[Dict[str, Any]]:
-    if context.message and context.message.parts:
-        for part in context.message.parts:
-            if isinstance(part.root, DataPart) and isinstance(part.root.data, dict):
-                return part.root.data
-            if isinstance(part.root, TextPart):
-                text = part.root.text.strip()
-                if text:
-                    try:
-                        parsed = json.loads(text)
-                    except json.JSONDecodeError:
-                        continue
-                    if isinstance(parsed, dict):
-                        return parsed
+def _extract_payload(message: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    parts = message.get("parts") or []
+    for part in parts:
+        if part.get("kind") == "data" and isinstance(part.get("data"), dict):
+            return part["data"]
+        if part.get("kind") == "text":
+            text = str(part.get("text", "")).strip()
+            if not text:
+                continue
+            try:
+                parsed = json.loads(text)
+            except json.JSONDecodeError:
+                continue
+            if isinstance(parsed, dict):
+                return parsed
     return None
 
 
-class RestaurantRaterExecutor(AgentExecutor):
-    async def execute(self, context: RequestContext, event_queue: EventQueue) -> None:
-        payload = _extract_payload(context)
-        task = context.current_task
+def _build_agent_card(base_url: str) -> Dict[str, Any]:
+    return {
+        "name": "Restaurant Rater Agent",
+        "description": "Deterministic restaurant rating agent (no external calls).",
+        "url": base_url,
+        "version": "1.0.0",
+        "default_input_modes": SUPPORTED_CONTENT_TYPES,
+        "default_output_modes": SUPPORTED_CONTENT_TYPES,
+        "capabilities": {"streaming": False},
+        "skills": [
+            {
+                "id": TOOL_NAME,
+                "name": "Rate Restaurants Tool",
+                "description": "Scores restaurants deterministically and marks recommendations based on preferences.",
+                "tags": ["restaurant", "rating", "scoring"],
+                "examples": [
+                    "Score these restaurants for Italian cuisine under price level 2."
+                ],
+            }
+        ],
+    }
 
-        if not task:
-            task = new_task(context.message)
-            await event_queue.enqueue_event(task)
 
-        updater = TaskUpdater(event_queue, task.id, task.context_id)
+def _build_task_response(response: Dict[str, Any], request_id: str) -> Dict[str, Any]:
+    task_id = str(uuid.uuid4())
+    context_id = str(uuid.uuid4())
+    message_id = str(uuid.uuid4())
+    return {
+        "jsonrpc": "2.0",
+        "id": request_id,
+        "result": {
+            "kind": "task",
+            "id": task_id,
+            "contextId": context_id,
+            "status": {
+                "state": "completed",
+                "message": {
+                    "kind": "message",
+                    "messageId": message_id,
+                    "role": "assistant",
+                    "parts": [
+                        {
+                            "kind": "data",
+                            "data": response,
+                            "metadata": {"mimeType": "application/json"},
+                        }
+                    ],
+                },
+            },
+        },
+    }
 
-        if not payload:
-            message = "Expected JSON payload with 'restaurants' and optional 'prefs'."
-            await updater.update_status(
-                TaskState.completed,
-                new_agent_parts_message([Part(root=TextPart(text=message))], task.context_id, task.id),
-                final=True,
-            )
-            return
 
-        restaurants = payload.get("restaurants", [])
-        if not isinstance(restaurants, list):
-            restaurants = []
-        prefs = payload.get("prefs") or {}
-        if not isinstance(prefs, dict):
-            prefs = {}
+async def handle_agent_card(request: Request) -> JSONResponse:
+    return JSONResponse(request.app.state.agent_card)
 
-        enriched = [_rate_restaurant(restaurant, prefs) for restaurant in restaurants]
-        response = {"restaurants": enriched}
 
-        result_part = Part(
-            root=DataPart(
-                data=response,
-                metadata={"mimeType": "application/json"},
-            )
-        )
+async def handle_jsonrpc(request: Request) -> JSONResponse | PlainTextResponse:
+    try:
+        payload = await request.json()
+    except json.JSONDecodeError:
+        return PlainTextResponse("Invalid JSON payload.", status_code=400)
 
-        await updater.update_status(
-            TaskState.completed,
-            new_agent_parts_message([result_part], task.context_id, task.id),
-            final=True,
-        )
+    if payload.get("jsonrpc") != "2.0" or payload.get("method") != "sendMessage":
+        return PlainTextResponse("Unsupported JSON-RPC request.", status_code=400)
 
-    async def cancel(self, request: RequestContext, event_queue: EventQueue) -> Task | None:
-        raise ServerError(error=UnsupportedOperationError())
+    request_id = str(payload.get("id") or "")
+    message = payload.get("params", {}).get("message")
+    if not isinstance(message, dict):
+        return PlainTextResponse("Missing params.message.", status_code=400)
+
+    message_payload = _extract_payload(message)
+    if not message_payload:
+        error_response = {
+            "jsonrpc": "2.0",
+            "id": request_id,
+            "error": {
+                "code": -32602,
+                "message": "Expected JSON payload with 'restaurants' and optional 'prefs'.",
+            },
+        }
+        return JSONResponse(error_response, status_code=200)
+
+    restaurants = message_payload.get("restaurants", [])
+    if not isinstance(restaurants, list):
+        restaurants = []
+    prefs = message_payload.get("prefs") or {}
+    if not isinstance(prefs, dict):
+        prefs = {}
+
+    enriched = [_rate_restaurant(restaurant, prefs) for restaurant in restaurants]
+    response = {"restaurants": enriched}
+    return JSONResponse(_build_task_response(response, request_id))
 
 
 def main() -> None:
     host = os.getenv("A2A_RATER_HOST", "localhost")
     port = int(os.getenv("A2A_RATER_PORT", "8002"))
     base_url = f"http://{host}:{port}"
+    agent_card = _build_agent_card(base_url)
 
-    capabilities = AgentCapabilities(streaming=False)
-    skill = AgentSkill(
-        id=TOOL_NAME,
-        name="Rate Restaurants Tool",
-        description="Scores restaurants deterministically and marks recommendations based on preferences.",
-        tags=["restaurant", "rating", "scoring"],
-        examples=["Score these restaurants for Italian cuisine under price level 2."],
+    app = Starlette(
+        routes=[
+            Route("/", handle_jsonrpc, methods=["POST"]),
+            Route("/.well-known/agent-card.json", handle_agent_card, methods=["GET"]),
+        ]
     )
-
-    agent_card = AgentCard(
-        name="Restaurant Rater Agent",
-        description="Deterministic restaurant rating agent (no external calls).",
-        url=base_url,
-        version="1.0.0",
-        default_input_modes=SUPPORTED_CONTENT_TYPES,
-        default_output_modes=SUPPORTED_CONTENT_TYPES,
-        capabilities=capabilities,
-        skills=[skill],
-    )
-
-    agent_executor = RestaurantRaterExecutor()
-
-    request_handler = DefaultRequestHandler(
-        agent_executor=agent_executor,
-        task_store=InMemoryTaskStore(),
-    )
-
-    server = A2AStarletteApplication(agent_card=agent_card, http_handler=request_handler)
-    app = server.build()
+    app.state.agent_card = agent_card
 
     app.add_middleware(
         CORSMiddleware,
