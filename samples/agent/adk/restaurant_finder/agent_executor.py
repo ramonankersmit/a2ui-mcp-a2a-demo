@@ -393,12 +393,15 @@ class RestaurantAgentExecutor(AgentExecutor):
             )
 
             prefs = {"cuisine": "French", "max_price_level": 3}
+            message_id = str(uuid.uuid4())
             request_payload = {
                 "jsonrpc": "2.0",
                 "id": str(uuid.uuid4()),
                 "method": "message/send",
                 "params": {
                     "message": {
+                        "kind": "message",
+                        "messageId": message_id,
                         "role": "user",
                         "parts": [
                             {
@@ -407,6 +410,7 @@ class RestaurantAgentExecutor(AgentExecutor):
                                     "restaurants": restaurants,
                                     "prefs": prefs,
                                 },
+                                "metadata": {"mimeType": "application/json"},
                             }
                         ],
                     }
@@ -417,16 +421,19 @@ class RestaurantAgentExecutor(AgentExecutor):
                 response = await client.post(
                     self._a2a_rater_url, json=request_payload
                 )
+                if response.status_code != 200:
+                    logger.error(
+                        "DEMO: A2A rank failed with status %s: %s",
+                        response.status_code,
+                        response.text,
+                    )
                 response.raise_for_status()
                 response_payload = response.json()
 
             ranked_restaurants = (
-                response_payload.get("result", {})
-                .get("status", {})
-                .get("message", {})
-                .get("parts", [{}])[0]
-                .get("data", {})
-                .get("restaurants", [])
+                response_payload["result"]["status"]["message"]["parts"][0]["data"][
+                    "restaurants"
+                ]
             )
 
             if isinstance(ranked_restaurants, list):
