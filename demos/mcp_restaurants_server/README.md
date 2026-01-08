@@ -15,19 +15,25 @@ py -m pip install -r demos/mcp_restaurants_server/requirements.txt
 ```
 
 ## Run
-Default host/port: `localhost:7001`
+Start the server (SSE transport):
 
 ```bash
 py -m demos.mcp_restaurants_server.server
 ```
 
-Override host/port with environment variables:
+### Host/port configuration
+The MCP SDK version in this repo may or may not accept `host`/`port` arguments on
+`FastMCP.run()`. This server detects supported parameters at runtime. If your
+SDK version supports them, you can set:
 
 ```bash
 set MCP_HOST=127.0.0.1
 set MCP_PORT=7001
 py -m demos.mcp_restaurants_server.server
 ```
+
+If host/port are not supported by the SDK version, the server will log that the
+SDK defaults are used.
 
 ## Transport / URL
 This server exposes MCP over **SSE** at:

@@ -1,5 +1,6 @@
 import asyncio
 import hashlib
+import inspect
 import logging
 import os
 import random
@@ -135,8 +136,23 @@ async def get_availability(restaurant_id: str, date: str) -> List[str]:
 def main() -> None:
     host = os.getenv("MCP_HOST", "localhost")
     port = int(os.getenv("MCP_PORT", "7001"))
-    logger.info("MCP restaurant server listening on %s:%s", host, port)
-    mcp.run(transport="sse", host=host, port=port)
+    signature = inspect.signature(FastMCP.run)
+    logger.debug("FastMCP.run signature: %s", signature)
+    params = signature.parameters
+    run_kwargs = {}
+    if "transport" in params:
+        run_kwargs["transport"] = "sse"
+    if "host" in params:
+        run_kwargs["host"] = host
+    if "port" in params:
+        run_kwargs["port"] = port
+    if "host" in params and "port" in params:
+        logger.info("MCP restaurant server listening on %s:%s", host, port)
+    else:
+        logger.info(
+            "MCP restaurant server listening (host/port defaults used by SDK)."
+        )
+    mcp.run(**run_kwargs)
 
 
 if __name__ == "__main__":
