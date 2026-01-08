@@ -25,6 +25,7 @@ Optional environment variables:
 
 Agent card endpoint:
 - `http://localhost:8002/.well-known/agent-card.json`
+- The JSON-RPC endpoint is `http://localhost:8002/` and only accepts POST (GET returns 405).
 
 ## Run the test client
 
