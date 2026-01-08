@@ -62,8 +62,25 @@ Optional env vars:
 - `MCP_HOST` (default: `localhost`)
 - `MCP_PORT` (default: `7001`)
 
+## 6) Optional: A2A restaurant rater (deterministic)
+Deterministic A2A agent (no LLMs or external calls) that enriches restaurant lists with scores.
+
+```bash
+py -m pip install -r demos/a2a_restaurant_rater/requirements.txt
+py -m demos.a2a_restaurant_rater.server
+```
+
+Default endpoint:
+- http://localhost:8002
+- Agent card: http://localhost:8002/.well-known/agent-card.json
+
+Optional env vars:
+- `A2A_RATER_HOST` (default: `localhost`)
+- `A2A_RATER_PORT` (default: `8002`)
+
 ## Ports / endpoints
 - Restaurant agent: http://localhost:10002
 - Contact lookup agent: http://localhost:10003
 - Agent cards: `/.well-known/agent-card.json` on each agent base URL
 - MCP restaurant tools (SSE): http://localhost:7001/sse
+- A2A restaurant rater: http://localhost:8002

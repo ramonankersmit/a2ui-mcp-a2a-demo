@@ -152,5 +152,29 @@ Environment variables:
 - **MCP_HOST** (default: `localhost`)
 - **MCP_PORT** (default: `7001`)
 
-## 6) .gitignore check
+## 6) A2A restaurant rater (optional)
+
+Location:
+```
+cd demos/a2a_restaurant_rater
+```
+
+Commands to run (Windows Git CMD):
+```bash
+py -m pip install -r demos/a2a_restaurant_rater/requirements.txt
+py -m demos.a2a_restaurant_rater.server
+py demos/a2a_restaurant_rater/test_client.py
+```
+
+Status: **Not executed in this environment.** The commands above are the intended local run steps, but I did not run them here.
+
+Expected URLs / endpoints:
+- Agent base URL: **http://localhost:8002**
+- Agent card: **http://localhost:8002/.well-known/agent-card.json**
+
+Environment variables:
+- **A2A_RATER_HOST** (default: `localhost`)
+- **A2A_RATER_PORT** (default: `8002`)
+
+## 7) .gitignore check
 - Added `build/` and `*.env` entries to ensure build artifacts and environment files are ignored.
