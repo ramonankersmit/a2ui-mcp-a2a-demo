@@ -31,6 +31,10 @@ export default async () => {
 
   return {
     plugins: [Middleware.A2AMiddleware.plugin()],
+    server: {
+      host: "127.0.0.1",
+      port: 5173,
+    },
     build: {
       rollupOptions: {
         input: entry,
