@@ -397,7 +397,7 @@ class RestaurantAgentExecutor(AgentExecutor):
             request_payload = {
                 "jsonrpc": "2.0",
                 "id": str(uuid.uuid4()),
-                "method": "message/send",
+                "method": "sendMessage",
                 "params": {
                     "message": {
                         "kind": "message",
