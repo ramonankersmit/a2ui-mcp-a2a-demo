@@ -303,13 +303,16 @@ class RestaurantAgentExecutor(AgentExecutor):
                 async with ClientSession(read_stream, write_stream) as session:
                     await session.initialize()
                     search_result = await session.call_tool(
-                        "search_restaurants", {"query": "*", "location": "demo"}
+                        "search_restaurants", {"query": "", "location": "demo"}
                     )
                     restaurants_payload = _extract_tool_payload(search_result)
                     restaurants = (
                         restaurants_payload
                         if isinstance(restaurants_payload, list)
                         else []
+                    )
+                    logger.info(
+                        "DEMO: MCP returned %d restaurants", len(restaurants)
                     )
 
                     search_duration = time.perf_counter() - search_start
