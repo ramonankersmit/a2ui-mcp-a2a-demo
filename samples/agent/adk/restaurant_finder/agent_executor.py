@@ -493,16 +493,21 @@ class RestaurantAgentExecutor(AgentExecutor):
                             health_response.status_code,
                             health_response.text,
                         )
-                        await self._emit_demo_data_model_update(
+                        logger.info("DEMO: emit update: /status (error)")
+                        await self._send_demo_update(
                             updater,
                             task,
-                            "/status",
-                            _status_value_map(
-                                False,
-                                "A2A rater unavailable. Check server logs.",
-                                DEMO_A2A_STEP,
-                            ),
-                            log_suffix="(error)",
+                            [
+                                *_build_demo_surface_messages(),
+                                _build_data_model_update(
+                                    "/status",
+                                    _status_value_map(
+                                        False,
+                                        "A2A rater unavailable. Check server logs.",
+                                        DEMO_A2A_STEP,
+                                    ),
+                                ),
+                            ],
                             state=TaskState.input_required,
                             final=True,
                         )
@@ -517,16 +522,21 @@ class RestaurantAgentExecutor(AgentExecutor):
                             response.status_code,
                             response.text,
                         )
-                        await self._emit_demo_data_model_update(
+                        logger.info("DEMO: emit update: /status (error)")
+                        await self._send_demo_update(
                             updater,
                             task,
-                            "/status",
-                            _status_value_map(
-                                False,
-                                "A2A ranking failed. Check server logs.",
-                                DEMO_A2A_STEP,
-                            ),
-                            log_suffix="(error)",
+                            [
+                                *_build_demo_surface_messages(),
+                                _build_data_model_update(
+                                    "/status",
+                                    _status_value_map(
+                                        False,
+                                        "A2A ranking failed. Check server logs.",
+                                        DEMO_A2A_STEP,
+                                    ),
+                                ),
+                            ],
                             state=TaskState.input_required,
                             final=True,
                         )
@@ -577,41 +587,43 @@ class RestaurantAgentExecutor(AgentExecutor):
             logger.info("DEMO: A2A rank completed in %.2fs", rank_duration)
 
             status_message = "Done"
+            logger.info("DEMO: emit update: /status (Done)")
+            logger.info(
+                "DEMO: emit update: /results (n=%d)", len(restaurants)
+            )
             await self._send_demo_update(
-                updater, task, _build_demo_surface_messages()
-            )
-            await self._emit_demo_data_model_update(
                 updater,
                 task,
-                "/status",
-                _status_value_map(False, status_message, DEMO_DONE_STEP),
-                log_suffix="(Done)",
-                state=TaskState.input_required,
-            )
-            await self._emit_demo_data_model_update(
-                updater,
-                task,
-                "/results",
-                _results_value_map(restaurants),
-                log_suffix=f"(n={len(restaurants)})",
+                [
+                    *_build_demo_surface_messages(),
+                    _build_data_model_update(
+                        "/status",
+                        _status_value_map(False, status_message, DEMO_DONE_STEP),
+                    ),
+                    _build_data_model_update(
+                        "/results", _results_value_map(restaurants)
+                    ),
+                ],
                 state=TaskState.input_required,
                 final=True,
             )
         except Exception as exc:
             logger.exception("DEMO: pipeline failed", exc_info=exc)
+            logger.info("DEMO: emit update: /status (error)")
             await self._send_demo_update(
-                updater, task, _build_demo_surface_messages()
-            )
-            await self._emit_demo_data_model_update(
                 updater,
                 task,
-                "/status",
-                _status_value_map(
-                    False,
-                    "Demo failed. Check server logs for details.",
-                    DEMO_DONE_STEP,
-                ),
-                log_suffix="(error)",
+                [
+                    *_build_demo_surface_messages(),
+                    _build_data_model_update(
+                        "/status",
+                        _status_value_map(
+                            False,
+                            "Demo failed. Check server logs for details.",
+                            DEMO_DONE_STEP,
+                        ),
+                    ),
+                ],
                 state=TaskState.input_required,
                 final=True,
             )
