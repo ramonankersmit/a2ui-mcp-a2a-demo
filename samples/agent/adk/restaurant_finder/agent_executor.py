@@ -268,7 +268,7 @@ class RestaurantAgentExecutor(AgentExecutor):
         # The appropriate one will be chosen at execution time.
         self.ui_agent = RestaurantAgent(base_url=base_url, use_ui=True)
         self.text_agent = RestaurantAgent(base_url=base_url, use_ui=False)
-        self._mcp_sse_url = os.getenv("MCP_SSE_URL", "http://127.0.0.1:8000/sse")
+        self._mcp_sse_url = os.getenv("MCP_SSE_URL", "http://127.0.0.1:7001/sse")
         self._a2a_rater_url = os.getenv("A2A_RATER_URL", "http://localhost:8002/")
 
     async def _send_demo_update(
@@ -310,6 +310,7 @@ class RestaurantAgentExecutor(AgentExecutor):
         try:
             search_start = time.perf_counter()
             logger.info("DEMO: MCP search")
+            logger.info("DEMO: MCP SSE URL %s", self._mcp_sse_url)
             async with sse_client(self._mcp_sse_url) as (read_stream, write_stream):
                 async with ClientSession(read_stream, write_stream) as session:
                     await session.initialize()

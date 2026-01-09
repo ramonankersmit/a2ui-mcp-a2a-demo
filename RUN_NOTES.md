@@ -75,7 +75,7 @@ Environment variables / keys:
 - **GEMINI_API_KEY** is required unless `GOOGLE_GENAI_USE_VERTEXAI=TRUE` is set.
 - Optional: **GOOGLE_GENAI_USE_VERTEXAI=TRUE**
 - Optional model override: **LITELLM_MODEL** (defaults to `gemini/gemini-2.5-flash`).
-- MCP SSE URL override: **MCP_SSE_URL** (defaults to `http://127.0.0.1:8000/sse`).
+- MCP SSE URL override: **MCP_SSE_URL** (defaults to `http://127.0.0.1:7001/sse`).
 - A2A rater URL override: **A2A_RATER_URL** (defaults to `http://localhost:8002/`).
 
 Where this is indicated:
@@ -151,12 +151,12 @@ py -m demos.mcp_restaurants_server.server
 Status: **Not executed in this environment.** The commands above are the intended local MCP run steps, but I did not run them here.
 
 Expected URL / transport:
-- MCP SSE endpoint: **http://localhost:7001/sse** (set `MCP_SSE_URL=http://localhost:7001/sse` to use the local server)
+- MCP SSE endpoint: **http://localhost:7001/sse** (matches the default `MCP_SSE_URL`)
 
 Environment variables:
 - **MCP_HOST** (default: `localhost`)
 - **MCP_PORT** (default: `7001`)
-- **MCP_SSE_URL** (default: `http://127.0.0.1:8000/sse`)
+- **MCP_SSE_URL** (default: `http://127.0.0.1:7001/sse`)
 
 ## 6) A2A restaurant rater (required for deterministic demo)
 

@@ -31,7 +31,7 @@ cp .env.example .env
 Optional env vars:
 - `GOOGLE_GENAI_USE_VERTEXAI=TRUE` (skip GEMINI_API_KEY check)
 - `LITELLM_MODEL=gemini/gemini-2.5-flash` (or another LiteLLM model)
-- `MCP_SSE_URL` (default: `http://127.0.0.1:8000/sse`)
+- `MCP_SSE_URL` (default: `http://127.0.0.1:7001/sse`)
 - `A2A_RATER_URL` (default: `http://localhost:8002/`)
 
 ## 3) Run the baseline demo (all services)
@@ -60,7 +60,7 @@ py -m demos.mcp_restaurants_server.server
 ```
 
 Default endpoint:
-- http://localhost:7001/sse (set `MCP_SSE_URL=http://localhost:7001/sse` to use the local server)
+- http://localhost:7001/sse (matches the default `MCP_SSE_URL`)
 
 Optional env vars:
 - `MCP_HOST` (default: `localhost`)
@@ -88,5 +88,5 @@ Optional env vars:
 - Restaurant agent: http://localhost:10002
 - Contact lookup agent: http://localhost:10003
 - Agent cards: `/.well-known/agent-card.json` on each agent base URL
-- MCP restaurant tools (SSE): http://localhost:7001/sse (local demo) or `MCP_SSE_URL` (default `http://127.0.0.1:8000/sse`)
+- MCP restaurant tools (SSE): http://localhost:7001/sse (local demo) or `MCP_SSE_URL` (default `http://127.0.0.1:7001/sse`)
 - A2A restaurant rater: http://localhost:8002
