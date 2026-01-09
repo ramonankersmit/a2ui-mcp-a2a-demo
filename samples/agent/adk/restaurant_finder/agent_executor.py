@@ -177,6 +177,37 @@ def _build_data_model_update(path: str, contents: list[dict[str, Any]]) -> dict[
 
 
 def _build_demo_surface_messages() -> list[dict[str, Any]]:
+    component_ids = {
+        "demo-root",
+        "demo-title",
+        "demo-status-panel",
+        "demo-status-panel-column",
+        "demo-status-row",
+        "demo-status-message",
+        "demo-step-badge",
+        "demo-step-badge-text",
+        "demo-loading-row",
+        "demo-loading-label",
+        "demo-loading-value",
+        "demo-refresh-row",
+        "demo-refresh-label",
+        "demo-refresh-value",
+        "demo-list",
+        "demo-card-template",
+        "demo-card-column",
+        "demo-name",
+        "demo-meta",
+        "demo-availability",
+        "demo-score",
+        "demo-recommended",
+        "demo-rationale",
+    }
+    explicit_list = ["demo-title", "demo-status-panel", "demo-list"]
+    logger.debug(
+        "DEMO: surface explicitList=%s component_ids=%s",
+        explicit_list,
+        sorted(component_ids),
+    )
     return [
         {
             "beginRendering": {
@@ -194,11 +225,7 @@ def _build_demo_surface_messages() -> list[dict[str, Any]]:
                         "component": {
                             "Column": {
                                 "children": {
-                                    "explicitList": [
-                                        "demo-title",
-                                        "demo-status-panel",
-                                        "demo-list",
-                                    ]
+                                    "explicitList": explicit_list
                                 }
                             }
                         },
