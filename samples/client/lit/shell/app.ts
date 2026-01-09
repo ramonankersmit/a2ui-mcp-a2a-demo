@@ -429,7 +429,7 @@ export class A2UILayoutEditor extends SignalWatcher(LitElement) {
     const message: v0_8.Types.A2UIClientEventMessage = {
       userAction: {
         name: "demo_mcp_a2a",
-        surfaceId: "demo",
+        surfaceId: "default",
         sourceComponentId: "demo-mcp-a2a",
         timestamp: new Date().toISOString(),
         context: {},

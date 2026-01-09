@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import ast
 import datetime
 import json
 import logging
@@ -46,7 +47,7 @@ from agent import RestaurantAgent
 
 logger = logging.getLogger(__name__)
 
-DEMO_SURFACE_ID = "demo"
+DEMO_SURFACE_ID = "default"
 DEMO_MCP_STEP = "mcp_search"
 DEMO_AVAILABILITY_STEP = "mcp_availability"
 DEMO_A2A_STEP = "a2a_rank"
@@ -76,8 +77,22 @@ def _extract_tool_payload(result: Any) -> Any:
         try:
             return json.loads(text)
         except json.JSONDecodeError:
-            continue
+            try:
+                return ast.literal_eval(text)
+            except (ValueError, SyntaxError):
+                continue
     return None
+
+
+def _coerce_restaurants(payload: Any) -> list[dict[str, Any]]:
+    if isinstance(payload, list):
+        return payload
+    if isinstance(payload, dict):
+        for key in ("restaurants", "results", "items", "data", "result", "output"):
+            value = payload.get(key)
+            if isinstance(value, list):
+                return value
+    return []
 
 
 def _availability_value_map(slots: list[str]) -> list[dict[str, Any]]:
@@ -318,11 +333,12 @@ class RestaurantAgentExecutor(AgentExecutor):
                         "search_restaurants", {"query": "", "location": "demo"}
                     )
                     restaurants_payload = _extract_tool_payload(search_result)
-                    restaurants = (
-                        restaurants_payload
-                        if isinstance(restaurants_payload, list)
-                        else []
-                    )
+                    restaurants = _coerce_restaurants(restaurants_payload)
+                    if not restaurants:
+                        logger.warning(
+                            "DEMO: MCP payload did not include restaurant list (payload type=%s)",
+                            type(restaurants_payload).__name__,
+                        )
                     logger.info(
                         "DEMO: MCP returned %d restaurants", len(restaurants)
                     )
@@ -487,6 +503,7 @@ class RestaurantAgentExecutor(AgentExecutor):
                 updater,
                 task,
                 [
+                    *_build_demo_surface_messages(),
                     _build_data_model_update(
                         "/status",
                         _status_value_map(False, status_message, DEMO_DONE_STEP),
@@ -501,6 +518,7 @@ class RestaurantAgentExecutor(AgentExecutor):
                 updater,
                 task,
                 [
+                    *_build_demo_surface_messages(),
                     _build_data_model_update(
                         "/status",
                         _status_value_map(
