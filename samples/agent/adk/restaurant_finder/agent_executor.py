@@ -19,6 +19,7 @@ import logging
 import os
 import time
 import uuid
+from urllib.parse import urljoin
 from typing import Any
 
 import httpx
@@ -301,25 +302,49 @@ class RestaurantAgentExecutor(AgentExecutor):
             final=final,
         )
 
+    async def _emit_demo_data_model_update(
+        self,
+        updater: TaskUpdater,
+        task: Task,
+        path: str,
+        contents: list[dict[str, Any]],
+        *,
+        log_suffix: str | None = None,
+        state: TaskState = TaskState.working,
+        final: bool = False,
+    ) -> None:
+        if log_suffix:
+            logger.info("DEMO: emit update: %s %s", path, log_suffix)
+        else:
+            logger.info("DEMO: emit update: %s", path)
+        await self._send_demo_update(
+            updater,
+            task,
+            [_build_data_model_update(path, contents)],
+            state=state,
+            final=final,
+        )
+
     async def _run_demo_pipeline(
         self, updater: TaskUpdater, task: Task
     ) -> None:
         start_messages = _build_demo_surface_messages()
-        start_messages.append(
-            _build_data_model_update(
-                "/",
-                [
-                    {
-                        "key": "status",
-                        "valueMap": _status_value_map(
-                            True, "Searching...", DEMO_MCP_STEP
-                        ),
-                    },
-                    {"key": "results", "valueMap": []},
-                ],
-            )
-        )
         await self._send_demo_update(updater, task, start_messages)
+        await self._emit_demo_data_model_update(
+            updater,
+            task,
+            "/",
+            [
+                {
+                    "key": "status",
+                    "valueMap": _status_value_map(
+                        True, "Searching...", DEMO_MCP_STEP
+                    ),
+                },
+                {"key": "results", "valueMap": []},
+            ],
+            log_suffix="(init)",
+        )
 
         restaurants: list[dict[str, Any]] = []
         try:
@@ -349,43 +374,45 @@ class RestaurantAgentExecutor(AgentExecutor):
                     )
 
                     partial = restaurants[:3]
-                    await self._send_demo_update(
+                    await self._emit_demo_data_model_update(
                         updater,
                         task,
-                        [
-                            _build_data_model_update(
-                                "/status",
-                                _status_value_map(
-                                    True,
-                                    "Searching...",
-                                    DEMO_MCP_STEP,
-                                ),
-                            ),
-                            _build_data_model_update(
-                                "/results", _results_value_map(partial)
-                            ),
-                        ],
+                        "/status",
+                        _status_value_map(
+                            True,
+                            "Searching...",
+                            DEMO_MCP_STEP,
+                        ),
+                        log_suffix="(Searching...)",
+                    )
+                    await self._emit_demo_data_model_update(
+                        updater,
+                        task,
+                        "/results",
+                        _results_value_map(partial),
+                        log_suffix=f"(n={len(partial)})",
                     )
 
                     availability_start = time.perf_counter()
                     logger.info("DEMO: MCP availability")
 
-                    await self._send_demo_update(
+                    await self._emit_demo_data_model_update(
                         updater,
                         task,
-                        [
-                            _build_data_model_update(
-                                "/status",
-                                _status_value_map(
-                                    True,
-                                    "Checking availability...",
-                                    DEMO_AVAILABILITY_STEP,
-                                ),
-                            ),
-                            _build_data_model_update(
-                                "/results", _results_value_map(restaurants)
-                            ),
-                        ],
+                        "/status",
+                        _status_value_map(
+                            True,
+                            "Checking availability...",
+                            DEMO_AVAILABILITY_STEP,
+                        ),
+                        log_suffix="(Checking availability...)",
+                    )
+                    await self._emit_demo_data_model_update(
+                        updater,
+                        task,
+                        "/results",
+                        _results_value_map(restaurants),
+                        log_suffix=f"(n={len(restaurants)})",
                     )
 
                     date = datetime.date.today().isoformat()
@@ -399,14 +426,12 @@ class RestaurantAgentExecutor(AgentExecutor):
                         )
                         if isinstance(availability_payload, list):
                             restaurant["availability"] = availability_payload
-                    await self._send_demo_update(
+                    await self._emit_demo_data_model_update(
                         updater,
                         task,
-                        [
-                            _build_data_model_update(
-                                "/results", _results_value_map(restaurants)
-                            )
-                        ],
+                        "/results",
+                        _results_value_map(restaurants),
+                        log_suffix=f"(n={len(restaurants)})",
                     )
 
                     availability_duration = time.perf_counter() - availability_start
@@ -421,74 +446,101 @@ class RestaurantAgentExecutor(AgentExecutor):
 
             logger.info("DEMO: A2A rank")
             rank_start = time.perf_counter()
-            await self._send_demo_update(
+            await self._emit_demo_data_model_update(
                 updater,
                 task,
-                [
-                    _build_data_model_update(
-                        "/status",
-                        _status_value_map(True, "Ranking...", DEMO_A2A_STEP),
-                    )
-                ],
+                "/status",
+                _status_value_map(True, "Ranking...", DEMO_A2A_STEP),
+                log_suffix="(Ranking...)",
             )
 
-            ranked = False
             try:
                 prefs = {"cuisine": "Italian", "max_price_level": 2}
                 logger.info("DEMO: A2A ranking %d restaurants", len(restaurants))
+                health_url = urljoin(
+                    self._a2a_rater_url, ".well-known/agent-card.json"
+                )
                 request_payload = {
                     "jsonrpc": "2.0",
                     "id": str(uuid.uuid4()),
-                    "method": "message/send",
+                    "method": "sendMessage",
                     "params": {
-                        "restaurants": restaurants,
-                        "prefs": prefs,
+                        "message": {
+                            "kind": "message",
+                            "messageId": str(uuid.uuid4()),
+                            "role": "user",
+                            "parts": [
+                                {
+                                    "kind": "data",
+                                    "data": {
+                                        "restaurants": restaurants,
+                                        "prefs": prefs,
+                                    },
+                                    "metadata": {
+                                        "mimeType": "application/json"
+                                    },
+                                }
+                            ],
+                        }
                     },
                 }
 
                 async with httpx.AsyncClient(timeout=10) as client:
+                    health_response = await client.get(health_url)
+                    if health_response.status_code != 200:
+                        logger.error(
+                            "DEMO: A2A rater check failed with status %s: %s",
+                            health_response.status_code,
+                            health_response.text,
+                        )
+                        logger.info("DEMO: emit update: /status (error)")
+                        await self._send_demo_update(
+                            updater,
+                            task,
+                            [
+                                *_build_demo_surface_messages(),
+                                _build_data_model_update(
+                                    "/status",
+                                    _status_value_map(
+                                        False,
+                                        "A2A rater unavailable. Check server logs.",
+                                        DEMO_A2A_STEP,
+                                    ),
+                                ),
+                            ],
+                            state=TaskState.input_required,
+                            final=True,
+                        )
+                        return
+
                     response = await client.post(
                         self._a2a_rater_url, json=request_payload
                     )
-                    if response.status_code == 400:
-                        logger.warning(
-                            "DEMO: A2A rank message/send unsupported; retrying with sendMessage."
-                        )
-                        request_payload = {
-                            "jsonrpc": "2.0",
-                            "id": str(uuid.uuid4()),
-                            "method": "sendMessage",
-                            "params": {
-                                "message": {
-                                    "kind": "message",
-                                    "messageId": str(uuid.uuid4()),
-                                    "role": "user",
-                                    "parts": [
-                                        {
-                                            "kind": "data",
-                                            "data": {
-                                                "restaurants": restaurants,
-                                                "prefs": prefs,
-                                            },
-                                            "metadata": {
-                                                "mimeType": "application/json"
-                                            },
-                                        }
-                                    ],
-                                }
-                            },
-                        }
-                        response = await client.post(
-                            self._a2a_rater_url, json=request_payload
-                        )
-
                     if response.status_code != 200:
                         logger.error(
                             "DEMO: A2A rank failed with status %s: %s",
                             response.status_code,
                             response.text,
                         )
-                    response.raise_for_status()
+                        logger.info("DEMO: emit update: /status (error)")
+                        await self._send_demo_update(
+                            updater,
+                            task,
+                            [
+                                *_build_demo_surface_messages(),
+                                _build_data_model_update(
+                                    "/status",
+                                    _status_value_map(
+                                        False,
+                                        "A2A ranking failed. Check server logs.",
+                                        DEMO_A2A_STEP,
+                                    ),
+                                ),
+                            ],
+                            state=TaskState.input_required,
+                            final=True,
+                        )
+                        return
                     response_payload = response.json()
 
                 ranked_restaurants = (
@@ -521,15 +573,12 @@ class RestaurantAgentExecutor(AgentExecutor):
                 restaurants.sort(
                     key=lambda item: float(item.get("score") or 0), reverse=True
                 )
-                ranked = True
-                await self._send_demo_update(
+                await self._emit_demo_data_model_update(
                     updater,
                     task,
-                    [
-                        _build_data_model_update(
-                            "/results", _results_value_map(restaurants)
-                        )
-                    ],
+                    "/results",
+                    _results_value_map(restaurants),
+                    log_suffix=f"(n={len(restaurants)})",
                 )
             except Exception as exc:
                 logger.exception("DEMO: A2A rank failed", exc_info=exc)
@@ -538,6 +587,10 @@ class RestaurantAgentExecutor(AgentExecutor):
             logger.info("DEMO: A2A rank completed in %.2fs", rank_duration)
 
             status_message = "Done"
+            logger.info("DEMO: emit update: /status (Done)")
+            logger.info(
+                "DEMO: emit update: /results (n=%d)", len(restaurants)
+            )
             await self._send_demo_update(
                 updater,
                 task,
@@ -547,12 +600,16 @@ class RestaurantAgentExecutor(AgentExecutor):
                         "/status",
                         _status_value_map(False, status_message, DEMO_DONE_STEP),
                     ),
-                    _build_data_model_update("/results", _results_value_map(restaurants)),
+                    _build_data_model_update(
+                        "/results", _results_value_map(restaurants)
+                    ),
                 ],
                 state=TaskState.input_required,
+                final=True,
             )
         except Exception as exc:
             logger.exception("DEMO: pipeline failed", exc_info=exc)
+            logger.info("DEMO: emit update: /status (error)")
             await self._send_demo_update(
                 updater,
                 task,
@@ -565,9 +622,10 @@ class RestaurantAgentExecutor(AgentExecutor):
                             "Demo failed. Check server logs for details.",
                             DEMO_DONE_STEP,
                         ),
-                    )
+                    ),
                 ],
                 state=TaskState.input_required,
+                final=True,
             )
 
     async def execute(
