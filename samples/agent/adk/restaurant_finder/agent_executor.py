@@ -59,9 +59,20 @@ def _extract_tool_payload(result: Any) -> Any:
 
     content = getattr(result, "content", []) or []
     for item in content:
-        text = getattr(item, "text", None)
-        if not text:
+        if isinstance(item, dict):
+            if "data" in item and item["data"] is not None:
+                return item["data"]
+            text = item.get("text")
+        else:
+            data = getattr(item, "data", None)
+            if data is not None:
+                return data
+            text = getattr(item, "text", None)
+
+        if text is None:
             continue
+        if not isinstance(text, str):
+            return text
         try:
             return json.loads(text)
         except json.JSONDecodeError:
@@ -299,17 +310,21 @@ class RestaurantAgentExecutor(AgentExecutor):
         try:
             search_start = time.perf_counter()
             logger.info("DEMO: MCP search")
+            logger.info("DEMO: MCP SSE URL %s", self._mcp_sse_url)
             async with sse_client(self._mcp_sse_url) as (read_stream, write_stream):
                 async with ClientSession(read_stream, write_stream) as session:
                     await session.initialize()
                     search_result = await session.call_tool(
-                        "search_restaurants", {"query": "*", "location": "demo"}
+                        "search_restaurants", {"query": "", "location": "demo"}
                     )
                     restaurants_payload = _extract_tool_payload(search_result)
                     restaurants = (
                         restaurants_payload
                         if isinstance(restaurants_payload, list)
                         else []
+                    )
+                    logger.info(
+                        "DEMO: MCP returned %d restaurants", len(restaurants)
                     )
 
                     search_duration = time.perf_counter() - search_start
@@ -392,77 +407,89 @@ class RestaurantAgentExecutor(AgentExecutor):
                 ],
             )
 
-            prefs = {"cuisine": "French", "max_price_level": 3}
-            message_id = str(uuid.uuid4())
-            request_payload = {
-                "jsonrpc": "2.0",
-                "id": str(uuid.uuid4()),
-                "method": "sendMessage",
-                "params": {
-                    "message": {
-                        "kind": "message",
-                        "messageId": message_id,
-                        "role": "user",
-                        "parts": [
-                            {
-                                "kind": "data",
-                                "data": {
-                                    "restaurants": restaurants,
-                                    "prefs": prefs,
-                                },
-                                "metadata": {"mimeType": "application/json"},
-                            }
-                        ],
-                    }
-                },
-            }
+            ranked = False
+            try:
+                prefs = {"cuisine": "French", "max_price_level": 3}
+                message_id = str(uuid.uuid4())
+                request_payload = {
+                    "jsonrpc": "2.0",
+                    "id": str(uuid.uuid4()),
+                    "method": "sendMessage",
+                    "params": {
+                        "message": {
+                            "kind": "message",
+                            "messageId": message_id,
+                            "role": "user",
+                            "parts": [
+                                {
+                                    "kind": "data",
+                                    "data": {
+                                        "restaurants": restaurants,
+                                        "prefs": prefs,
+                                    },
+                                    "metadata": {"mimeType": "application/json"},
+                                }
+                            ],
+                        }
+                    },
+                }
 
-            async with httpx.AsyncClient(timeout=10) as client:
-                response = await client.post(
-                    self._a2a_rater_url, json=request_payload
-                )
-                if response.status_code != 200:
-                    logger.error(
-                        "DEMO: A2A rank failed with status %s: %s",
-                        response.status_code,
-                        response.text,
+                async with httpx.AsyncClient(timeout=10) as client:
+                    response = await client.post(
+                        self._a2a_rater_url, json=request_payload
                     )
-                response.raise_for_status()
-                response_payload = response.json()
-
-            ranked_restaurants = (
-                response_payload["result"]["status"]["message"]["parts"][0]["data"][
-                    "restaurants"
-                ]
-            )
-
-            if isinstance(ranked_restaurants, list):
-                ranked_by_id = {item.get("id"): item for item in ranked_restaurants}
-                for restaurant in restaurants:
-                    ranked = ranked_by_id.get(restaurant.get("id"))
-                    if ranked:
-                        restaurant.update(
-                            {
-                                "score": ranked.get("score"),
-                                "rationale": ranked.get("rationale"),
-                                "recommended": ranked.get("recommended"),
-                            }
+                    if response.status_code != 200:
+                        logger.error(
+                            "DEMO: A2A rank failed with status %s: %s",
+                            response.status_code,
+                            response.text,
                         )
+                    response.raise_for_status()
+                    response_payload = response.json()
 
-            restaurants.sort(
-                key=lambda item: float(item.get("score") or 0), reverse=True
-            )
+                ranked_restaurants = (
+                    response_payload["result"]["status"]["message"]["parts"][0]["data"][
+                        "restaurants"
+                    ]
+                )
+
+                if isinstance(ranked_restaurants, list):
+                    ranked_by_id = {
+                        item.get("id"): item for item in ranked_restaurants
+                    }
+                    for restaurant in restaurants:
+                        ranked_restaurant = ranked_by_id.get(restaurant.get("id"))
+                        if ranked_restaurant:
+                            restaurant.update(
+                                {
+                                    "score": ranked_restaurant.get("score"),
+                                    "rationale": ranked_restaurant.get("rationale"),
+                                    "recommended": ranked_restaurant.get(
+                                        "recommended"
+                                    ),
+                                }
+                            )
+
+                restaurants.sort(
+                    key=lambda item: float(item.get("score") or 0), reverse=True
+                )
+                ranked = True
+            except Exception as exc:
+                logger.exception("DEMO: A2A rank failed", exc_info=exc)
 
             rank_duration = time.perf_counter() - rank_start
             logger.info("DEMO: A2A rank completed in %.2fs", rank_duration)
 
+            status_message = (
+                "Ranked results" if ranked else "Results ready (ranking skipped)"
+            )
             await self._send_demo_update(
                 updater,
                 task,
                 [
                     _build_data_model_update(
                         "/status",
-                        _status_value_map(False, "Ranked results", DEMO_DONE_STEP),
+                        _status_value_map(False, status_message, DEMO_DONE_STEP),
                     ),
                     _build_data_model_update("/results", _results_value_map(restaurants)),
                 ],

@@ -151,11 +151,11 @@ py -m demos.mcp_restaurants_server.server
 Status: **Not executed in this environment.** The commands above are the intended local MCP run steps, but I did not run them here.
 
 Expected URL / transport:
-- MCP SSE endpoint: **http://localhost:7001/sse** (set `MCP_SSE_URL=http://localhost:7001/sse` to use the local server)
+- MCP SSE endpoint: **http://localhost:8000/sse** (matches the default `MCP_SSE_URL`)
 
 Environment variables:
 - **MCP_HOST** (default: `localhost`)
-- **MCP_PORT** (default: `7001`)
+- **MCP_PORT** (default: `8000`)
 - **MCP_SSE_URL** (default: `http://127.0.0.1:8000/sse`)
 
 ## 6) A2A restaurant rater (required for deterministic demo)

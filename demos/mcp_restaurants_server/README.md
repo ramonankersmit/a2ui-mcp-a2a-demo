@@ -28,7 +28,7 @@ SDK version supports them, you can set:
 
 ```bash
 set MCP_HOST=127.0.0.1
-set MCP_PORT=7001
+set MCP_PORT=8000
 py -m demos.mcp_restaurants_server.server
 ```
 
@@ -39,7 +39,7 @@ SDK defaults are used.
 This server exposes MCP over **SSE** at:
 
 ```
-http://localhost:7001/sse
+http://localhost:8000/sse
 ```
 
 ## Tools
@@ -55,7 +55,7 @@ from mcp.client.sse import sse_client
 
 
 async def main() -> None:
-    async with sse_client("http://localhost:7001/sse") as (read, write):
+    async with sse_client("http://localhost:8000/sse") as (read, write):
         async with ClientSession(read, write) as session:
             await session.initialize()
 

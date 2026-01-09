@@ -135,7 +135,7 @@ async def get_availability(restaurant_id: str, date: str) -> List[str]:
 
 def main() -> None:
     host = os.getenv("MCP_HOST", "localhost")
-    port = int(os.getenv("MCP_PORT", "7001"))
+    port = int(os.getenv("MCP_PORT", "8000"))
     signature = inspect.signature(FastMCP.run)
     logger.debug("FastMCP.run signature: %s", signature)
     params = signature.parameters
