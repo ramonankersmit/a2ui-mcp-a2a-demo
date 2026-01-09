@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import ast
 import datetime
 import json
 import logging
@@ -76,7 +77,10 @@ def _extract_tool_payload(result: Any) -> Any:
         try:
             return json.loads(text)
         except json.JSONDecodeError:
-            continue
+            try:
+                return ast.literal_eval(text)
+            except (ValueError, SyntaxError):
+                continue
     return None
 
 
@@ -84,7 +88,7 @@ def _coerce_restaurants(payload: Any) -> list[dict[str, Any]]:
     if isinstance(payload, list):
         return payload
     if isinstance(payload, dict):
-        for key in ("restaurants", "results", "items", "data"):
+        for key in ("restaurants", "results", "items", "data", "result", "output"):
             value = payload.get(key)
             if isinstance(value, list):
                 return value
