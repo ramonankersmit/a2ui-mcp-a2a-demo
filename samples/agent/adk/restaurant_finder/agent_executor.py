@@ -487,6 +487,7 @@ class RestaurantAgentExecutor(AgentExecutor):
                 updater,
                 task,
                 [
+                    *_build_demo_surface_messages(),
                     _build_data_model_update(
                         "/status",
                         _status_value_map(False, status_message, DEMO_DONE_STEP),
@@ -501,6 +502,7 @@ class RestaurantAgentExecutor(AgentExecutor):
                 updater,
                 task,
                 [
+                    *_build_demo_surface_messages(),
                     _build_data_model_update(
                         "/status",
                         _status_value_map(
