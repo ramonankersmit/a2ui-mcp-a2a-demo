@@ -312,7 +312,7 @@ class RestaurantAgentExecutor(AgentExecutor):
                     {
                         "key": "status",
                         "valueMap": _status_value_map(
-                            True, "Searching via MCP...", DEMO_MCP_STEP
+                            True, "Searching...", DEMO_MCP_STEP
                         ),
                     },
                     {"key": "results", "valueMap": []},
@@ -357,7 +357,7 @@ class RestaurantAgentExecutor(AgentExecutor):
                                 "/status",
                                 _status_value_map(
                                     True,
-                                    "Found 3, fetching more...",
+                                    "Searching...",
                                     DEMO_MCP_STEP,
                                 ),
                             ),
@@ -377,7 +377,9 @@ class RestaurantAgentExecutor(AgentExecutor):
                             _build_data_model_update(
                                 "/status",
                                 _status_value_map(
-                                    True, "Checking availability...", DEMO_AVAILABILITY_STEP
+                                    True,
+                                    "Checking availability...",
+                                    DEMO_AVAILABILITY_STEP,
                                 ),
                             ),
                             _build_data_model_update(
@@ -397,17 +399,24 @@ class RestaurantAgentExecutor(AgentExecutor):
                         )
                         if isinstance(availability_payload, list):
                             restaurant["availability"] = availability_payload
-
-                        await self._send_demo_update(
-                            updater,
-                            task,
-                            [_build_data_model_update("/results", _results_value_map(restaurants))],
-                        )
+                    await self._send_demo_update(
+                        updater,
+                        task,
+                        [
+                            _build_data_model_update(
+                                "/results", _results_value_map(restaurants)
+                            )
+                        ],
+                    )
 
                     availability_duration = time.perf_counter() - availability_start
                     logger.info(
                         "DEMO: MCP availability completed in %.2fs",
                         availability_duration,
+                    )
+                    logger.info(
+                        "DEMO: MCP availability updated for %d restaurants",
+                        min(len(restaurants), 3),
                     )
 
             logger.info("DEMO: A2A rank")
@@ -418,35 +427,21 @@ class RestaurantAgentExecutor(AgentExecutor):
                 [
                     _build_data_model_update(
                         "/status",
-                        _status_value_map(True, "Ranking with A2A...", DEMO_A2A_STEP),
+                        _status_value_map(True, "Ranking...", DEMO_A2A_STEP),
                     )
                 ],
             )
 
             ranked = False
             try:
-                prefs = {"cuisine": "French", "max_price_level": 3}
-                message_id = str(uuid.uuid4())
+                prefs = {"cuisine": "Italian", "max_price_level": 2}
                 request_payload = {
                     "jsonrpc": "2.0",
                     "id": str(uuid.uuid4()),
-                    "method": "sendMessage",
+                    "method": "message/send",
                     "params": {
-                        "message": {
-                            "kind": "message",
-                            "messageId": message_id,
-                            "role": "user",
-                            "parts": [
-                                {
-                                    "kind": "data",
-                                    "data": {
-                                        "restaurants": restaurants,
-                                        "prefs": prefs,
-                                    },
-                                    "metadata": {"mimeType": "application/json"},
-                                }
-                            ],
-                        }
+                        "restaurants": restaurants,
+                        "prefs": prefs,
                     },
                 }
 
@@ -485,20 +480,31 @@ class RestaurantAgentExecutor(AgentExecutor):
                                     ),
                                 }
                             )
+                    logger.info(
+                        "DEMO: A2A returned ranked data for %d restaurants",
+                        len(ranked_by_id),
+                    )
 
                 restaurants.sort(
                     key=lambda item: float(item.get("score") or 0), reverse=True
                 )
                 ranked = True
+                await self._send_demo_update(
+                    updater,
+                    task,
+                    [
+                        _build_data_model_update(
+                            "/results", _results_value_map(restaurants)
+                        )
+                    ],
+                )
             except Exception as exc:
                 logger.exception("DEMO: A2A rank failed", exc_info=exc)
 
             rank_duration = time.perf_counter() - rank_start
             logger.info("DEMO: A2A rank completed in %.2fs", rank_duration)
 
-            status_message = (
-                "Ranked results" if ranked else "Results ready (ranking skipped)"
-            )
+            status_message = "Done"
             await self._send_demo_update(
                 updater,
                 task,
