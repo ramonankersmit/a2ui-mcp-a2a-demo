@@ -435,6 +435,7 @@ class RestaurantAgentExecutor(AgentExecutor):
             ranked = False
             try:
                 prefs = {"cuisine": "Italian", "max_price_level": 2}
+                logger.info("DEMO: A2A ranking %d restaurants", len(restaurants))
                 request_payload = {
                     "jsonrpc": "2.0",
                     "id": str(uuid.uuid4()),
@@ -449,6 +450,38 @@ class RestaurantAgentExecutor(AgentExecutor):
                     response = await client.post(
                         self._a2a_rater_url, json=request_payload
                     )
+                    if response.status_code == 400:
+                        logger.warning(
+                            "DEMO: A2A rank message/send unsupported; retrying with sendMessage."
+                        )
+                        request_payload = {
+                            "jsonrpc": "2.0",
+                            "id": str(uuid.uuid4()),
+                            "method": "sendMessage",
+                            "params": {
+                                "message": {
+                                    "kind": "message",
+                                    "messageId": str(uuid.uuid4()),
+                                    "role": "user",
+                                    "parts": [
+                                        {
+                                            "kind": "data",
+                                            "data": {
+                                                "restaurants": restaurants,
+                                                "prefs": prefs,
+                                            },
+                                            "metadata": {
+                                                "mimeType": "application/json"
+                                            },
+                                        }
+                                    ],
+                                }
+                            },
+                        }
+                        response = await client.post(
+                            self._a2a_rater_url, json=request_payload
+                        )
+
                     if response.status_code != 200:
                         logger.error(
                             "DEMO: A2A rank failed with status %s: %s",
