@@ -46,7 +46,7 @@ from agent import RestaurantAgent
 
 logger = logging.getLogger(__name__)
 
-DEMO_SURFACE_ID = "default"
+DEMO_SURFACE_ID = "demo"
 DEMO_MCP_STEP = "mcp_search"
 DEMO_AVAILABILITY_STEP = "mcp_availability"
 DEMO_A2A_STEP = "a2a_rank"
