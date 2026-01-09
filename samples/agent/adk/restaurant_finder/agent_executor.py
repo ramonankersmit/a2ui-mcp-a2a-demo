@@ -13,6 +13,7 @@
 # limitations under the License.
 
 import ast
+import asyncio
 import datetime
 import json
 import logging
@@ -144,11 +145,24 @@ def _results_value_map(restaurants: list[dict[str, Any]]) -> list[dict[str, Any]
     ]
 
 
-def _status_value_map(loading: bool, message: str, step: str) -> list[dict[str, Any]]:
+def _current_timestamp() -> str:
+    return datetime.datetime.now(datetime.timezone.utc).isoformat(timespec="seconds")
+
+
+def _status_value_map(
+    loading: bool,
+    message: str,
+    step: str,
+    last_refresh: str | None = None,
+) -> list[dict[str, Any]]:
     return [
         {"key": "loading", "valueBoolean": loading},
         {"key": "message", "valueString": message},
         {"key": "step", "valueString": step},
+        {
+            "key": "lastRefresh",
+            "valueString": last_refresh or _current_timestamp(),
+        },
     ]
 
 
@@ -163,6 +177,37 @@ def _build_data_model_update(path: str, contents: list[dict[str, Any]]) -> dict[
 
 
 def _build_demo_surface_messages() -> list[dict[str, Any]]:
+    component_ids = {
+        "demo-root",
+        "demo-title",
+        "demo-status-panel",
+        "demo-status-panel-column",
+        "demo-status-row",
+        "demo-status-message",
+        "demo-step-badge",
+        "demo-step-badge-text",
+        "demo-loading-row",
+        "demo-loading-label",
+        "demo-loading-value",
+        "demo-refresh-row",
+        "demo-refresh-label",
+        "demo-refresh-value",
+        "demo-list",
+        "demo-card-template",
+        "demo-card-column",
+        "demo-name",
+        "demo-meta",
+        "demo-availability",
+        "demo-score",
+        "demo-recommended",
+        "demo-rationale",
+    }
+    explicit_list = ["demo-title", "demo-status-panel", "demo-list"]
+    logger.debug(
+        "DEMO: surface explicitList=%s component_ids=%s",
+        explicit_list,
+        sorted(component_ids),
+    )
     return [
         {
             "beginRendering": {
@@ -180,12 +225,7 @@ def _build_demo_surface_messages() -> list[dict[str, Any]]:
                         "component": {
                             "Column": {
                                 "children": {
-                                    "explicitList": [
-                                        "demo-title",
-                                        "demo-status",
-                                        "demo-step",
-                                        "demo-list",
-                                    ]
+                                    "explicitList": explicit_list
                                 }
                             }
                         },
@@ -202,14 +242,119 @@ def _build_demo_surface_messages() -> list[dict[str, Any]]:
                         },
                     },
                     {
-                        "id": "demo-status",
+                        "id": "demo-status-panel",
+                        "component": {
+                            "Card": {"child": "demo-status-panel-column"}
+                        },
+                    },
+                    {
+                        "id": "demo-status-panel-column",
+                        "component": {
+                            "Column": {
+                                "children": {
+                                    "explicitList": [
+                                        "demo-status-row",
+                                        "demo-loading-row",
+                                        "demo-refresh-row",
+                                    ]
+                                }
+                            }
+                        },
+                    },
+                    {
+                        "id": "demo-status-row",
+                        "component": {
+                            "Row": {
+                                "children": {
+                                    "explicitList": [
+                                        "demo-status-message",
+                                        "demo-step-badge",
+                                    ]
+                                }
+                            }
+                        },
+                    },
+                    {
+                        "id": "demo-status-message",
+                        "weight": 3,
                         "component": {
                             "Text": {"usageHint": "h3", "text": {"path": "/status/message"}}
                         },
                     },
                     {
-                        "id": "demo-step",
-                        "component": {"Text": {"text": {"path": "/status/step"}}},
+                        "id": "demo-step-badge",
+                        "component": {"Card": {"child": "demo-step-badge-text"}},
+                    },
+                    {
+                        "id": "demo-step-badge-text",
+                        "component": {
+                            "Text": {
+                                "usageHint": "caption",
+                                "text": {"path": "/status/step"},
+                            }
+                        },
+                    },
+                    {
+                        "id": "demo-loading-row",
+                        "component": {
+                            "Row": {
+                                "children": {
+                                    "explicitList": [
+                                        "demo-loading-label",
+                                        "demo-loading-value",
+                                    ]
+                                }
+                            }
+                        },
+                    },
+                    {
+                        "id": "demo-loading-label",
+                        "component": {
+                            "Text": {
+                                "usageHint": "caption",
+                                "text": {"literalString": "Loading"},
+                            }
+                        },
+                    },
+                    {
+                        "id": "demo-loading-value",
+                        "component": {
+                            "Text": {
+                                "usageHint": "caption",
+                                "text": {"path": "/status/loading"},
+                            }
+                        },
+                    },
+                    {
+                        "id": "demo-refresh-row",
+                        "component": {
+                            "Row": {
+                                "children": {
+                                    "explicitList": [
+                                        "demo-refresh-label",
+                                        "demo-refresh-value",
+                                    ]
+                                }
+                            }
+                        },
+                    },
+                    {
+                        "id": "demo-refresh-label",
+                        "component": {
+                            "Text": {
+                                "usageHint": "caption",
+                                "text": {"literalString": "Last updated"},
+                            }
+                        },
+                    },
+                    {
+                        "id": "demo-refresh-value",
+                        "component": {
+                            "Text": {
+                                "usageHint": "caption",
+                                "text": {"path": "/status/lastRefresh"},
+                            }
+                        },
                     },
                     {
                         "id": "demo-list",
@@ -312,11 +457,20 @@ class RestaurantAgentExecutor(AgentExecutor):
         log_suffix: str | None = None,
         state: TaskState = TaskState.working,
         final: bool = False,
+        delay_s: float = 0.6,
     ) -> None:
-        if log_suffix:
-            logger.info("DEMO: emit update: %s %s", path, log_suffix)
+        if path == "/status":
+            logger.info(
+                "DEMO: emit /status%s",
+                f" {log_suffix}" if log_suffix else "",
+            )
+        elif path == "/results":
+            logger.info(
+                "DEMO: emit /results%s",
+                f" {log_suffix}" if log_suffix else "",
+            )
         else:
-            logger.info("DEMO: emit update: %s", path)
+            logger.info("DEMO: emit %s%s", path, f" {log_suffix}" if log_suffix else "")
         await self._send_demo_update(
             updater,
             task,
@@ -324,6 +478,8 @@ class RestaurantAgentExecutor(AgentExecutor):
             state=state,
             final=final,
         )
+        if delay_s > 0:
+            await asyncio.sleep(delay_s)
 
     async def _run_demo_pipeline(
         self, updater: TaskUpdater, task: Task
@@ -333,17 +489,20 @@ class RestaurantAgentExecutor(AgentExecutor):
         await self._emit_demo_data_model_update(
             updater,
             task,
-            "/",
-            [
-                {
-                    "key": "status",
-                    "valueMap": _status_value_map(
-                        True, "Searching...", DEMO_MCP_STEP
-                    ),
-                },
-                {"key": "results", "valueMap": []},
-            ],
-            log_suffix="(init)",
+            "/status",
+            _status_value_map(
+                True,
+                "Searching via MCP...",
+                DEMO_MCP_STEP,
+            ),
+            log_suffix='"Searching via MCP..."',
+        )
+        await self._emit_demo_data_model_update(
+            updater,
+            task,
+            "/results",
+            _results_value_map([]),
+            log_suffix="n=0",
         )
 
         restaurants: list[dict[str, Any]] = []
@@ -380,17 +539,17 @@ class RestaurantAgentExecutor(AgentExecutor):
                         "/status",
                         _status_value_map(
                             True,
-                            "Searching...",
+                            f"Found {len(partial)} results...",
                             DEMO_MCP_STEP,
                         ),
-                        log_suffix="(Searching...)",
+                        log_suffix=f'"Found {len(partial)} results..."',
                     )
                     await self._emit_demo_data_model_update(
                         updater,
                         task,
                         "/results",
                         _results_value_map(partial),
-                        log_suffix=f"(n={len(partial)})",
+                        log_suffix=f"n={len(partial)}",
                     )
 
                     availability_start = time.perf_counter()
@@ -405,14 +564,14 @@ class RestaurantAgentExecutor(AgentExecutor):
                             "Checking availability...",
                             DEMO_AVAILABILITY_STEP,
                         ),
-                        log_suffix="(Checking availability...)",
+                        log_suffix='"Checking availability..."',
                     )
                     await self._emit_demo_data_model_update(
                         updater,
                         task,
                         "/results",
                         _results_value_map(restaurants),
-                        log_suffix=f"(n={len(restaurants)})",
+                        log_suffix=f"n={len(restaurants)}",
                     )
 
                     date = datetime.date.today().isoformat()
@@ -431,7 +590,18 @@ class RestaurantAgentExecutor(AgentExecutor):
                         task,
                         "/results",
                         _results_value_map(restaurants),
-                        log_suffix=f"(n={len(restaurants)})",
+                        log_suffix=f"n={len(restaurants)}",
+                    )
+                    await self._emit_demo_data_model_update(
+                        updater,
+                        task,
+                        "/status",
+                        _status_value_map(
+                            True,
+                            "Ranking via A2A...",
+                            DEMO_A2A_STEP,
+                        ),
+                        log_suffix='"Ranking via A2A..."',
                     )
 
                     availability_duration = time.perf_counter() - availability_start
@@ -446,13 +616,6 @@ class RestaurantAgentExecutor(AgentExecutor):
 
             logger.info("DEMO: A2A rank")
             rank_start = time.perf_counter()
-            await self._emit_demo_data_model_update(
-                updater,
-                task,
-                "/status",
-                _status_value_map(True, "Ranking...", DEMO_A2A_STEP),
-                log_suffix="(Ranking...)",
-            )
 
             try:
                 prefs = {"cuisine": "Italian", "max_price_level": 2}
@@ -493,7 +656,7 @@ class RestaurantAgentExecutor(AgentExecutor):
                             health_response.status_code,
                             health_response.text,
                         )
-                        logger.info("DEMO: emit update: /status (error)")
+                        logger.info("DEMO: emit /status (error)")
                         await self._send_demo_update(
                             updater,
                             task,
@@ -522,7 +685,7 @@ class RestaurantAgentExecutor(AgentExecutor):
                             response.status_code,
                             response.text,
                         )
-                        logger.info("DEMO: emit update: /status (error)")
+                        logger.info("DEMO: emit /status (error)")
                         await self._send_demo_update(
                             updater,
                             task,
@@ -573,13 +736,6 @@ class RestaurantAgentExecutor(AgentExecutor):
                 restaurants.sort(
                     key=lambda item: float(item.get("score") or 0), reverse=True
                 )
-                await self._emit_demo_data_model_update(
-                    updater,
-                    task,
-                    "/results",
-                    _results_value_map(restaurants),
-                    log_suffix=f"(n={len(restaurants)})",
-                )
             except Exception as exc:
                 logger.exception("DEMO: A2A rank failed", exc_info=exc)
 
@@ -587,29 +743,25 @@ class RestaurantAgentExecutor(AgentExecutor):
             logger.info("DEMO: A2A rank completed in %.2fs", rank_duration)
 
             status_message = "Done"
-            logger.info("DEMO: emit update: /status (Done)")
-            logger.info(
-                "DEMO: emit update: /results (n=%d)", len(restaurants)
-            )
-            await self._send_demo_update(
+            await self._emit_demo_data_model_update(
                 updater,
                 task,
-                [
-                    *_build_demo_surface_messages(),
-                    _build_data_model_update(
-                        "/status",
-                        _status_value_map(False, status_message, DEMO_DONE_STEP),
-                    ),
-                    _build_data_model_update(
-                        "/results", _results_value_map(restaurants)
-                    ),
-                ],
+                "/results",
+                _results_value_map(restaurants),
+                log_suffix=f"n={len(restaurants)}",
+            )
+            await self._emit_demo_data_model_update(
+                updater,
+                task,
+                "/status",
+                _status_value_map(False, status_message, DEMO_DONE_STEP),
+                log_suffix='"Done"',
                 state=TaskState.input_required,
                 final=True,
             )
         except Exception as exc:
             logger.exception("DEMO: pipeline failed", exc_info=exc)
-            logger.info("DEMO: emit update: /status (error)")
+            logger.info("DEMO: emit /status (error)")
             await self._send_demo_update(
                 updater,
                 task,

@@ -68,6 +68,7 @@ Optional env vars:
 
 ## 6) A2A restaurant rater (required for demo mode)
 Deterministic A2A agent (no LLMs or external calls) that enriches restaurant lists with scores.
+The requirements include `a2a-sdk[all]` to run the local agent server.
 
 ```bash
 cd /path/to/a2ui-mcp-a2a-demo

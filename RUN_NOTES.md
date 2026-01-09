@@ -165,6 +165,9 @@ Location:
 cd demos/a2a_restaurant_rater
 ```
 
+Requirements note:
+- The demo uses `a2a-sdk[all]`, included in `demos/a2a_restaurant_rater/requirements.txt`.
+
 Commands to run (Windows Git CMD):
 ```bash
 cd /path/to/a2ui-mcp-a2a-demo
