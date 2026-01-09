@@ -59,9 +59,20 @@ def _extract_tool_payload(result: Any) -> Any:
 
     content = getattr(result, "content", []) or []
     for item in content:
-        text = getattr(item, "text", None)
-        if not text:
+        if isinstance(item, dict):
+            if "data" in item and item["data"] is not None:
+                return item["data"]
+            text = item.get("text")
+        else:
+            data = getattr(item, "data", None)
+            if data is not None:
+                return data
+            text = getattr(item, "text", None)
+
+        if text is None:
             continue
+        if not isinstance(text, str):
+            return text
         try:
             return json.loads(text)
         except json.JSONDecodeError:
